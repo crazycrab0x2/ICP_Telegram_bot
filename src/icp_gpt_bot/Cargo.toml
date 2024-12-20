@@ -1,0 +1,19 @@
+[package]
+name = "icp_gpt_bot"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+candid = "0.10"
+ic-cdk = "0.16"
+ic-cdk-timers = "0.10" # Feel free to remove this dependency if you don't need timers
+serde = "1.0.116"
+serde_json = "1.0.59"
+serde_bytes = "0.11.12"
+telegram-bot-raw = "0.8.0"
+tokio = "1.42.0"

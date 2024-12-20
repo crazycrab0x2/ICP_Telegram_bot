@@ -1,0 +1,17 @@
+{
+  "canisters": {
+    "ICP_GPT_bot_backend": {
+      "candid": "src/icp_gpt_bot/icp_gpt_bot.did",
+      "package": "icp_gpt_bot",
+      "type": "rust"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}

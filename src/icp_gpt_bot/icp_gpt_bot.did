@@ -1,0 +1,36 @@
+type TransformArgs = record {
+  response: HttpResponseCdk;
+  context: vec blob;
+};
+type HeaderField = record { text; text; };
+
+type HttpHeader = record { 
+    name: text; 
+    value: text; 
+};
+
+type HttpRequest = record {
+    method: text;
+    url: text;
+    headers: vec HeaderField;
+    body: blob;
+};
+
+type HttpResponse = record {
+    status_code: nat16;
+    headers: vec HeaderField;
+    body: blob;
+    upgrade : opt bool;
+};
+
+type HttpResponseCdk = record {
+    status: nat16;
+    headers: vec HttpHeader;
+    body: blob;
+};
+service : {
+    call_chatgpt_api: (text) -> (text);
+    http_request: (request: HttpRequest) -> (HttpResponse) query;
+    http_request_update: (request: HttpRequest) -> (HttpResponse);
+    transform: (TransformArgs) -> (HttpResponseCdk) query;
+}
