@@ -1,13 +1,12 @@
 mod types;
 mod bot;
 
-use bot::{handle_message, call_chatgpt, transform_response};
-use types::{HttpRequest, HttpResponse, HeaderField, TransformArgs};
+use bot::{handle_message, call_chatgpt_chat, call_chatgpt_image, transform_response};
+use types::{HttpRequest, HttpResponse, HeaderField};
 use telegram_bot_raw::{MessageKind, Update, UpdateKind};
 use ic_cdk::{
-    api::management_canister::http_request::{HttpHeader, HttpResponse as HttpResponseCdk, TransformArgs as TransformArgsCdk}, query, update
+    api::management_canister::http_request::{HttpResponse as HttpResponseCdk, TransformArgs as TransformArgsCdk}, query, update
 };
-use candid::Nat;
 
 
 #[update]
@@ -15,14 +14,24 @@ async fn http_request_update(req: HttpRequest) -> HttpResponse {
     handle_http_request(req).await
 }
 
-#[query]
-async fn http_request(req: HttpRequest) -> HttpResponse {
-    handle_http_request(req).await
+#[query(composite = true)]
+async fn http_request(_req: HttpRequest) -> HttpResponse {
+    HttpResponse {
+        status_code: 200,
+        headers: vec![HeaderField(String::from("content-type"), String::from("text/html"))],
+        body: "Waiting".as_bytes().to_vec(),
+        upgrade: Some(true),
+    }
 }
 
 #[update]
-async fn call_chatgpt_api(prompt: String) -> String {
-    call_chatgpt(prompt).await
+async fn chatgpt_chat(prompt: String) -> String {
+    call_chatgpt_chat(prompt).await
+}
+
+#[update]
+async fn chatgpt_image(prompt: String) -> String {
+    call_chatgpt_image(prompt).await
 }
 
 #[query]
@@ -50,7 +59,7 @@ async fn handle_telegram(_token: &str, req: HttpRequest) -> HttpResponse {
             status_code: 500,
             headers: vec![HeaderField(String::from("content-type"), String::from("text/plain"))],
             body: format!("{}", err).as_bytes().to_vec(),
-            upgrade: Some(false),
+            upgrade: Some(true),
         },
         Ok(update) => match update.kind {
             UpdateKind::Message(msg) => match msg.kind {
@@ -67,7 +76,7 @@ fn ok200() -> HttpResponse {
         status_code: 200,
         headers: vec![HeaderField(String::from("content-type"), String::from("text/html"))],
         body: "Nothing to do".as_bytes().to_vec(),
-        upgrade: Some(false),
+        upgrade: Some(true),
     }
 }
 
@@ -76,7 +85,7 @@ fn index(_req: HttpRequest) -> HttpResponse {
         status_code: 200,
         headers: vec![HeaderField(String::from("content-type"), String::from("text/plain"))],
         body: format!("This is a Telegram bot on the Internet Computer!\nMy canister id: {}\nLocal time is {}ns.\nMy cycle balance is {}\nFind me on telegram:\nhttps://t.me/canister_ai_bot\nFind me on browser:\nhttps://{}.raw.icp0.io/\n", ic_cdk::id(), ic_cdk::api::time(), ic_cdk::api::canister_balance(), ic_cdk::id()).as_bytes().to_vec(),
-        upgrade: Some(false),
+        upgrade: Some(true),
     }
 }
 fn err404(req: HttpRequest) -> HttpResponse {
@@ -89,6 +98,8 @@ fn err404(req: HttpRequest) -> HttpResponse {
         )
         .as_bytes()
         .to_vec(),
-        upgrade: Some(false),
+        upgrade: Some(true),
     }
 }
+
+ic_cdk::export_candid!();
