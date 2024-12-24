@@ -1,12 +1,11 @@
 
-use crate::types::{HttpResponse, HeaderField, TransformArgs};
+use crate::types::{HttpResponse, HeaderField};
 use serde_json::{Value, json};
-use telegram_bot_raw::{MessageChat, SendMessage, SendChatAction, ChatAction};
+use telegram_bot_raw::{MessageChat, SendMessage};
 use ic_cdk::api::management_canister::http_request::{
     CanisterHttpRequestArgument, HttpHeader, HttpMethod, HttpResponse as HttpResponseCdk, 
     TransformContext as TransformContextCdk, http_request, TransformArgs as TransformArgsCdk, 
 };
-use candid::Nat;
 
 
 pub async fn handle_message(chat: MessageChat, text: String) -> HttpResponse {
@@ -14,7 +13,7 @@ pub async fn handle_message(chat: MessageChat, text: String) -> HttpResponse {
         "/start" => {
             send_message(
                 chat,
-                "Hello! I am a Telegram Bot on Internet Computer using ChatGPT.\nTry /info to get my information.\nChat and Image generation coming soon.\n".to_string(),
+                "Hello! I am a Telegram Bot on Internet Computer using ChatGPT.\nTry /info to get my information.\nTry /chat+prompt for chat completion\nTry /imagine+prompt for image generation.\n".to_string(),
             )
         }
         "/info" => {
@@ -29,23 +28,49 @@ pub async fn handle_message(chat: MessageChat, text: String) -> HttpResponse {
                 ),
             )
         }
-        _ => {
-            match text.as_str().strip_prefix("/chat ") {
-                Some(prompt) => {
-                    ic_cdk::println!("fdgdfg");
-                    let reply = call_chatgpt(prompt.to_string()).await;
-                    send_message(
-                        chat.clone(),
-                        reply,
-                    )
-                }
-                None => send_message(chat, "Invalid Prompt".to_string()),
+        "/chat" => {
+            send_message(
+                chat,
+                "Send prompt after /chat\nLike /chat Hello".to_string(),
+            )
+        }
+        "/imagine" => {
+            send_message(
+                chat,
+                "Send prompt after /imagine\nLike /imagine a cute cat".to_string(),
+            )
+        }
+        other => {
+            if other.contains("/chat") {
+                let prompt = other.strip_prefix("/chat").unwrap();
+                let reply = call_chatgpt_chat(prompt.to_string()).await;
+                ic_cdk::println!("chat {}", reply.clone());
+                
+                send_message(
+                    chat.clone(),
+                    reply,
+                )
+            }
+            else if other.contains("/imagine") {
+                let prompt = other.strip_prefix("/imagine").unwrap();
+                // ic_cdk::println!("chat {}", prompt);
+                let reply = call_chatgpt_image(prompt.to_string()).await;
+                send_message(
+                    chat.clone(),
+                    reply,
+                )
+            }
+            else {
+                send_message(
+                    chat.clone(),
+                    "invalid Prompt".to_string(),
+                )
             }
         },
     }
 }
 
-pub async fn call_chatgpt(prompt: String) -> String {
+pub async fn call_chatgpt_chat(prompt: String) -> String {
     let url = "https://us-central1-telegram-gpt-488cd.cloudfunctions.net/chatgpt/chat".to_string();
 
     let body = json!({
@@ -57,12 +82,69 @@ pub async fn call_chatgpt(prompt: String) -> String {
     let request = CanisterHttpRequestArgument {
         url,
         method: HttpMethod::POST,
-        headers: vec![HttpHeader {
-            name: "Content-Type".to_string(),
-            value: "application/json".to_string(),
-        }],
+        headers: vec![
+            HttpHeader {
+                name: "Content-Type".to_string(),
+                value: "application/json".to_string(),
+            },
+            HttpHeader {
+                name: "Idempotency-Key".to_string(),
+                value: ic_cdk::api::time().to_string(),
+            }
+        ],
         body: Some(body.as_bytes().to_vec()),
-        max_response_bytes: Some(50_000), // 50 KB
+        max_response_bytes: Some(50_000), // 3MB
+        transform: Some(TransformContextCdk::from_name(
+            "transform".to_string(),
+            vec![],
+        )),
+    };
+
+    let cycles = 700_000_000;
+
+    match http_request(request, cycles).await {
+        Ok((response,)) => {
+            let parse_res = String::from_utf8(response.body);
+            match parse_res {
+                Ok(res) => {
+                    (&res[1..res.len() - 1]).to_string()
+                },
+                Err(_err) => {
+                    "Failed to parse response".to_string()
+                }  
+            }
+        }
+        Err((r, m)) => {
+            format!("HTTP request failed with code {:?}: {}", r, m)
+        }
+    }
+}
+
+
+pub async fn call_chatgpt_image(prompt: String) -> String {
+    let url = "https://us-central1-telegram-gpt-488cd.cloudfunctions.net/chatgpt/image".to_string();
+
+    let body = json!({
+        "prompt": prompt,
+        "date": ic_cdk::api::time().to_string()
+    })
+    .to_string();
+
+    let request = CanisterHttpRequestArgument {
+        url,
+        method: HttpMethod::POST,
+        headers: vec![
+            HttpHeader {
+                name: "Content-Type".to_string(),
+                value: "application/json".to_string(),
+            },
+            HttpHeader {
+                name: "Idempotency-Key".to_string(),
+                value: ic_cdk::api::time().to_string(),
+            }
+        ],
+        body: Some(body.as_bytes().to_vec()),
+        max_response_bytes: Some(50_000), // 3MB
         transform: Some(TransformContextCdk::from_name(
             "transform".to_string(),
             vec![],
@@ -97,16 +179,16 @@ fn send_message(chat: MessageChat, text: String) -> HttpResponse {
 }
 
 
-fn send_chat_action(chat: MessageChat) -> HttpResponse {
-    let m = SendChatAction::new(chat, ChatAction::Typing);
-    let value = serde_json::to_value(m).unwrap();
-    HttpResponse {
-        status_code: 200,
-        headers: vec![HeaderField(String::from("content-type"), String::from("application/json"))],
-        body: serde_json::to_vec(&value).unwrap(),
-        upgrade: Some(true),
-    }
-}
+// fn send_chat_action(chat: MessageChat) -> HttpResponse {
+//     let m = SendChatAction::new(chat, ChatAction::Typing);
+//     let value = serde_json::to_value(m).unwrap();
+//     HttpResponse {
+//         status_code: 200,
+//         headers: vec![HeaderField(String::from("content-type"), String::from("application/json"))],
+//         body: serde_json::to_vec(&value).unwrap(),
+//         upgrade: Some(true),
+//     }
+// }
 
 fn add_method(value: &mut Value, method: String) {
     match value {
@@ -118,33 +200,6 @@ fn add_method(value: &mut Value, method: String) {
 }
 
 pub fn transform_response(raw: TransformArgsCdk) -> HttpResponseCdk {
-    // let headers = vec![
-    //     HttpHeader {
-    //         name: "Content-Security-Policy".to_string(),
-    //         value: "default-src 'self'".to_string(),
-    //     },
-    //     HttpHeader {
-    //         name: "Referrer-Policy".to_string(),
-    //         value: "strict-origin".to_string(),
-    //     },
-    //     HttpHeader {
-    //         name: "Permissions-Policy".to_string(),
-    //         value: "geolocation=(self)".to_string(),
-    //     },
-    //     HttpHeader {
-    //         name: "Strict-Transport-Security".to_string(),
-    //         value: "max-age=63072000".to_string(),
-    //     },
-    //     HttpHeader {
-    //         name: "X-Frame-Options".to_string(),
-    //         value: "DENY".to_string(),
-    //     },
-    //     HttpHeader {
-    //         name: "X-Content-Type-Options".to_string(),
-    //         value: "nosniff".to_string(),
-    //     },
-    // ];
-
     HttpResponseCdk {
         status: raw.response.status.clone(),
         body: raw.response.body.clone(),

@@ -1,36 +1,26 @@
-type TransformArgs = record {
-  response: HttpResponseCdk;
-  context: vec blob;
-};
-type HeaderField = record { text; text; };
-
-type HttpHeader = record { 
-    name: text; 
-    value: text; 
-};
-
+type HttpHeader = record { value : text; name : text };
 type HttpRequest = record {
-    method: text;
-    url: text;
-    headers: vec HeaderField;
-    body: blob;
+  url : text;
+  method : text;
+  body : blob;
+  headers : vec record { text; text };
 };
-
 type HttpResponse = record {
-    status_code: nat16;
-    headers: vec HeaderField;
-    body: blob;
-    upgrade : opt bool;
+  body : blob;
+  headers : vec record { text; text };
+  upgrade : opt bool;
+  status_code : nat16;
 };
-
-type HttpResponseCdk = record {
-    status: nat16;
-    headers: vec HttpHeader;
-    body: blob;
+type HttpResponse_1 = record {
+  status : nat;
+  body : blob;
+  headers : vec HttpHeader;
 };
+type TransformArgs = record { context : blob; response : HttpResponse_1 };
 service : {
-    call_chatgpt_api: (text) -> (text);
-    http_request: (request: HttpRequest) -> (HttpResponse) query;
-    http_request_update: (request: HttpRequest) -> (HttpResponse);
-    transform: (TransformArgs) -> (HttpResponseCdk) query;
+  chatgpt_chat : (text) -> (text);
+  chatgpt_image : (text) -> (text);
+  http_request : (HttpRequest) -> (HttpResponse) composite_query;
+  http_request_update : (HttpRequest) -> (HttpResponse);
+  transform : (TransformArgs) -> (HttpResponse_1) query;
 }

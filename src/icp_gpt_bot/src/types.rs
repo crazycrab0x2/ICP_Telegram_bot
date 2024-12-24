@@ -21,8 +21,7 @@ pub struct HttpRequest {
 }
 
 /// A HTTP response.
-#[derive(CandidType, Serialize, Deserialize, Clone, Debug, Default)]
-#[derive(PartialEq)]
+#[derive(CandidType, Deserialize)]
 pub struct HttpResponse {
     /// The HTTP status code.
     pub status_code: u16,
@@ -35,7 +34,7 @@ pub struct HttpResponse {
     pub upgrade: Option<bool>,
 }
 
-#[derive(CandidType, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(CandidType, Deserialize)]
 pub struct TransformArgs {
     /// Raw response from remote service, to be transformed
     pub response: HttpResponse,
@@ -44,3 +43,4 @@ pub struct TransformArgs {
     #[serde(with = "serde_bytes")]
     pub context: Vec<u8>,
 }
+

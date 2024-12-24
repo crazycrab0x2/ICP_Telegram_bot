@@ -17,3 +17,4 @@ fi
 curl "https://api.telegram.org/bot7964736455:AAEqFUH7-eCOUcKmMK4DX4N8qE5gIU3Cbdg/setWebhook?url=https://edrd5-rqaaa-aaaab-qaafq-cai.raw.icp0.io/webhook/7964736455:AAEqFUH7-eCOUcKmMK4DX4N8qE5gIU3Cbdg"
 
 curl "https://api.telegram.org/bot7964736455:AAEqFUH7-eCOUcKmMK4DX4N8qE5gIU3Cbdg/setWebhook?url=https://iw7nm-6qaaa-aaaak-ao7ta-cai.raw.icp0.io/webhook/7964736455:AAEqFUH7-eCOUcKmMK4DX4N8qE5gIU3Cbdg"
+
