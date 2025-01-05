@@ -1,13 +1,37 @@
 mod types;
 mod bot;
+mod gpt;
+mod memory;
 
-use bot::{handle_message, call_chatgpt_chat, call_chatgpt_image, transform_response};
-use types::{HttpRequest, HttpResponse, HeaderField};
+use bot::handle_message;
+use types::{HttpRequest, HttpResponse, HeaderField, InitArg};
 use telegram_bot_raw::{MessageKind, Update, UpdateKind};
 use ic_cdk::{
-    api::management_canister::http_request::{HttpResponse as HttpResponseCdk, TransformArgs as TransformArgsCdk}, query, update
+    api::management_canister::http_request::{HttpResponse as HttpResponseCdk, TransformArgs as TransformArgsCdk}, query, update, init
 };
+use crate::memory::{PROMPT_STORE, ADMIN_STORE, TOKEN_STORE, USERNAME_STORE};
 
+// #[init]
+// fn init(arg: InitArg) {
+//     ADMIN_STORE.with(|admin_store| {
+//         *admin_store.borrow_mut() = arg.admin;
+//     });
+//     TOKEN_STORE.with(|token_store| {
+//         *token_store.borrow_mut() = arg.token;
+//     });
+//     USERNAME_STORE.with(|username_store| {
+//         let mut binding = username_store.borrow_mut();
+//         for username in arg.usernames {
+//             binding.push(username);
+//         };
+//     });
+//     PROMPT_STORE.with(|prompt_store| {
+//         let mut binding = prompt_store.borrow_mut();
+//         for prompt in arg.prompts {
+//             binding.insert(prompt.shortcut, prompt.prompt);
+//         }
+//     })
+// }
 
 #[update]
 async fn http_request_update(req: HttpRequest) -> HttpResponse {
@@ -24,19 +48,14 @@ async fn http_request(_req: HttpRequest) -> HttpResponse {
     }
 }
 
-#[update]
-async fn chatgpt_chat(prompt: String) -> String {
-    call_chatgpt_chat(prompt).await
-}
-
-#[update]
-async fn chatgpt_image(prompt: String) -> String {
-    call_chatgpt_image(prompt).await
-}
-
 #[query]
 fn transform(raw: TransformArgsCdk) -> HttpResponseCdk {
-    transform_response(raw)
+    HttpResponseCdk {
+        status: raw.response.status.clone(),
+        body: raw.response.body.clone(),
+        headers: vec![],
+        ..Default::default()
+    }
 }
 
 pub async fn handle_http_request(req: HttpRequest) -> HttpResponse {
@@ -63,7 +82,7 @@ async fn handle_telegram(_token: &str, req: HttpRequest) -> HttpResponse {
         },
         Ok(update) => match update.kind {
             UpdateKind::Message(msg) => match msg.kind {
-                MessageKind::Text { data, .. } => handle_message(msg.chat, data).await,
+                MessageKind::Text { data, .. } => handle_message(msg.from.username.unwrap(), msg.chat, data).await,
                 _ => ok200(),
             },
             _ => ok200(),

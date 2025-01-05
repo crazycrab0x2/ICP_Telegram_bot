@@ -12,8 +12,10 @@ crate-type = ["cdylib"]
 candid = "0.10"
 ic-cdk = "0.16"
 ic-cdk-timers = "0.10" # Feel free to remove this dependency if you don't need timers
-serde = "1.0.116"
+serde = { version = "1.0.116", features = ["derive"] }
 serde_json = "1.0.59"
 serde_bytes = "0.11.12"
 telegram-bot-raw = "0.8.0"
 tokio = "1.42.0"
+regex = "1"
+ic-stable-structures = "0.6.4"
