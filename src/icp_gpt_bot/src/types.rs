@@ -44,3 +44,40 @@ pub struct TransformArgs {
     pub context: Vec<u8>,
 }
 
+#[derive(Clone, Serialize, CandidType, Deserialize, PartialEq, Debug)]
+pub enum MessageType {
+    Chat,
+    Image
+}
+
+
+#[derive(Clone, Serialize, CandidType, Deserialize)]
+pub struct Message {
+    pub username: String,
+    pub date: u64,
+    pub types: MessageType,
+    pub question: String,
+    pub answer: String,
+    pub is_follow: bool
+}
+
+#[derive(Clone, Serialize, CandidType, Deserialize)]
+pub struct Form {
+    pub role: String,
+    pub content: String
+}
+
+#[derive(Clone, Serialize, CandidType, Deserialize)]
+pub struct InitArg {
+    pub admin: String,
+    pub token: String,
+    pub usernames: Vec<String>,
+    pub prompts: Vec<Shortcut>
+}
+
+#[derive(Clone, Serialize, CandidType, Deserialize)]
+pub struct Shortcut {
+    pub shortcut: String,
+    pub prompt: String
+}
+

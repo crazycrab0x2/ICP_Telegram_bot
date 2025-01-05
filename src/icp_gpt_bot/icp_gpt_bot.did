@@ -18,8 +18,6 @@ type HttpResponse_1 = record {
 };
 type TransformArgs = record { context : blob; response : HttpResponse_1 };
 service : {
-  chatgpt_chat : (text) -> (text);
-  chatgpt_image : (text) -> (text);
   http_request : (HttpRequest) -> (HttpResponse) composite_query;
   http_request_update : (HttpRequest) -> (HttpResponse);
   transform : (TransformArgs) -> (HttpResponse_1) query;
