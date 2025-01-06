@@ -1,34 +1,50 @@
 use crate::gpt::call_chatgpt;
+use crate::memory::{get_shortcut_prompt, is_admin, is_valid_user};
 use crate::types::{Form, Message, MessageType};
 use crate::{
-    memory::{add_new_messages, get_followed_messages, get_latest_messages},
+    memory::{
+        add_new_messages, add_shortcut_prompt, add_username, get_followed_messages,
+        get_latest_messages, get_model, get_prompt, get_shortcuts, get_usernames,
+        remove_shortcut_prompt, remove_username, set_model, set_prompt,
+    },
     types::{HeaderField, HttpResponse},
 };
-use regex::Regex;
 use serde_json::json;
 use serde_json::Value;
-use telegram_bot_raw::{MessageChat, SendMessage, ParseMode};
+use telegram_bot_raw::{MessageChat, ParseMode, SendMessage};
 
 pub async fn handle_message(username: String, chat: MessageChat, text: String) -> HttpResponse {
     let timestamp = ic_cdk::api::time();
-
-    let response = if text.contains("/") {
+    if !is_valid_user(username.clone()) {
+        return send_message(chat, "User is not allowed to use this bot.".to_string());
+    }
+    let response = if text.starts_with("/") {
         if text == "/start".to_string() {
-            "'Hello! I am a Telegram Bot on Internet Computer using ChatGPT.\nTry /help to get my information.\nTry to send prompt for chat completion\nTry /imagine+prompt for image generation.\n'".to_string()
-        } else if text == "/help".to_string() {
+            "Hello! I am a Telegram Bot on Internet Computer using ChatGPT.  \n  \nSend me a question, and I will do my best to answer it. Please be specific, as I'm not very clever.  \nI don't remember chat context by default. To ask follow-up questions, reply to my messages or start your questions with a '+' sign.  \n  \nBuilt-in commands:  \n/retry - retry the last question  \n/imagine - generate described image  \n/config - config for bot  \n/help - show help  \n/info - show info  \n! - use defualt shortcut  \n".to_string()
+        } else if text == "/info".to_string() {
             format!(
-                "'This is a Telegram bot on the Internet Computer!\nMy canister id: {}\nLocal time is {}ns.\nMy cycle balance is {}\nFind me on telegram:\nhttps://t.me/canister_ai_bot\nFind me on browser:\nhttps://{}.raw.icp0.io/\n'",
+                "This is a Telegram bot on the Internet Computer!  \nMy canister id: {}  \nLocal time is {}ns.  \nMy cycle balance is {}G Cycle  \nEstimate : {} requests  \nFind me on telegram:  \nhttps://t.me/canister_ai_bot\nFind me on browser:  \nhttps://{}.raw.icp0.io/  \n",
                 ic_cdk::id(),
                 timestamp,
-                ic_cdk::api::canister_balance(),
+                (ic_cdk::api::canister_balance() / 1_000_000_000) as i32,
+                (ic_cdk::api::canister_balance() / 700_000_000) as i32,
                 ic_cdk::id()
             )
+        } else if text == "/help".to_string() {
+            "/config usernames - get all usernames  \n/config usernames add {username} - add new username  \n/config usernames remove crazycrab0x1 - remove {username}  \n  \n/config model - get current model  \n/config model {model} - set model  \n  \n/config prompt - get current prompt  \n/config prompt {prompt} - set new prompt  \n  \n/config shortcut - get all shortcuts  \n/config shortcut add {shortcut} {prompt} - set new shortcut  \n/config shortcut remove {shortcut} {prompt} - remove shortcut  \n".to_string()
         } else if text == "/retry".to_string() {
             core_action(MessageType::Chat, username, "".to_string(), false, true).await
         } else if text == "/imagine".to_string() {
-            "'Send prompt after /Imagine\nLike /imagine a cute cat'".to_string()
-        } else if text.contains("/imagine") {
-            let prompt = text.strip_prefix("/imagine").unwrap();
+            "Send prompt after /Imagine\nLike /imagine a cute cat".to_string()
+        } else if text.contains("/config") {
+            let config_text = text.strip_prefix("/config ");
+            if config_text.is_none() {
+                format!("Use these subcommand to config bot  \nusernames  \nprompt  \nmodel  \nshortcut  \n")
+            } else {
+                handle_config(config_text.unwrap(), username.clone())
+            }
+        } else if text.starts_with("/imagine") {
+            let prompt = text.strip_prefix("/imagine ").unwrap();
             core_action(
                 MessageType::Image,
                 username,
@@ -38,14 +54,36 @@ pub async fn handle_message(username: String, chat: MessageChat, text: String) -
             )
             .await
         } else {
-            "'Invalid Command.'".to_string()
+            "Invalid Command.".to_string()
+        }
+    } else if text.starts_with("!") {
+        let shortcut_text = text.strip_prefix("!");
+        if shortcut_text.is_none() {
+            format!("Invalid format  \n!shortcut prompt")
+        } else {
+            let mut words = shortcut_text.unwrap().split_whitespace();
+            let shortcut = words.next();
+            if shortcut.is_none() || words.next().is_none() {
+                format!("Invalid format  \n!shortcut prompt")
+            } else {
+                let shortcut_prompt = get_shortcut_prompt(shortcut.unwrap().to_string());
+                if shortcut_prompt.is_none() {
+                    format!("Invalid shortcut.")
+                } else {
+                    let user_prompt = shortcut_text
+                        .unwrap()
+                        .strip_prefix(format!("{} ", shortcut.unwrap()).as_str())
+                        .unwrap();
+                    let prompt = shortcut_prompt.unwrap() + user_prompt;
+                    core_action(MessageType::Chat, username, prompt, false, false).await
+                }
+            }
         }
     } else {
-        ic_cdk::println! {"{}", username};
         let is_follow = if text.starts_with('+') { true } else { false };
         core_action(MessageType::Chat, username, text, is_follow, false).await
     };
-    send_message(chat, response[1..response.len() - 1].to_string())
+    send_message(chat, response)
 }
 
 pub async fn core_action(
@@ -105,7 +143,7 @@ pub async fn core_action(
     };
     let mut reply = call_chatgpt(uri, request_body.clone(), key.clone()).await;
     if reply == "Rate exceeded.".to_string() {
-        reply = call_chatgpt("image", request_body, key.clone()).await;
+        reply = call_chatgpt(uri, request_body, key.clone()).await;
     }
     add_new_messages(
         key,
@@ -117,16 +155,149 @@ pub async fn core_action(
         is_follow,
     );
     ic_cdk::println!("before - {}", reply);
-    let response = convert_to_telegram_format(&reply, "html");
-    ic_cdk::println!("after - {}", response);
-    response
+    reply
+}
+
+fn handle_config(config_text: &str, username: String) -> String {
+    let is_admin = is_admin(username);
+
+    if config_text.starts_with("usernames") {
+        let username_config_text = config_text.strip_prefix("usernames ");
+        if username_config_text.is_none() {
+            let usernames = get_usernames();
+            if usernames.len() == 0 {
+                format!("There is no specific user.")
+            } else {
+                usernames.concat()
+            }
+        } else {
+            let mut words = username_config_text.unwrap().split_whitespace();
+            let sub_command = words.next().unwrap();
+            let new_username = words.next();
+            if new_username.is_none() {
+                format!("Invalid format.  \n/config usernames add/remove **username**")
+            } else {
+                if sub_command == "add" {
+                    if !is_admin {
+                        return format!("You are not admin.");
+                    }
+                    add_username(new_username.unwrap().to_string());
+                    format!("username **{}** added successfully.", new_username.unwrap())
+                } else if sub_command == "remove" {
+                    if !is_admin {
+                        return format!("You are not admin.");
+                    }
+                    remove_username(new_username.unwrap().to_string());
+                    format!(
+                        "username **{}** removed successfully.",
+                        new_username.unwrap()
+                    )
+                } else {
+                    format!("Invalid subcommand.  \nYou can use **add** and **remove**")
+                }
+            }
+        }
+    } else if config_text.starts_with("model") {
+        let model_config_text = config_text.strip_prefix("model ");
+        if model_config_text.is_none() {
+            get_model()
+        } else {
+            if is_admin {
+                set_model(model_config_text.unwrap().to_string());
+                format!("Model set by '{}'", model_config_text.unwrap())
+            } else {
+                format!("You are not admin.")
+            }
+        }
+    } else if config_text.starts_with("prompt") {
+        let prompt_config_text = config_text.strip_prefix("prompt ");
+        if prompt_config_text.is_none() {
+            get_prompt()
+        } else {
+            if is_admin {
+                set_prompt(prompt_config_text.unwrap().to_string());
+                format!("Prompt set for '{}'", prompt_config_text.unwrap())
+            } else {
+                format!("You are not admin.")
+            }
+        }
+    } else if config_text.starts_with("shortcut") {
+        let shortcut_config_text = config_text.strip_prefix("shortcut ");
+        if shortcut_config_text.is_none() {
+            let shortcuts = get_shortcuts();
+            if shortcuts.len() == 0 {
+                format!("There is no any shortcut.")
+            } else {
+                shortcuts.concat()
+            }
+        } else {
+            let sub_command = shortcut_config_text
+                .unwrap()
+                .split_whitespace()
+                .next()
+                .unwrap();
+            if sub_command == "add" {
+                if !is_admin {
+                    return format!("You are not admin.");
+                }
+                let new_shortcut = shortcut_config_text.unwrap().strip_prefix("add ");
+                if new_shortcut.is_none() {
+                    format!("Invalid format.  \n/config shortcut add **shortcut** **prompt**")
+                } else {
+                    let mut words = new_shortcut.unwrap().split_whitespace();
+                    let shortcut = words.next();
+                    if shortcut.is_none() || words.next().is_none() {
+                        format!("Invalid format.  \n/config shortcut add **shortcut** **prompt**")
+                    } else {
+                        let prompt = new_shortcut
+                            .unwrap()
+                            .strip_prefix(format!("{} ", shortcut.unwrap()).as_str())
+                            .unwrap();
+                        add_shortcut_prompt(shortcut.unwrap().to_string(), prompt.to_string());
+                        format!("Shortcut **{}** added successfully.", shortcut.unwrap())
+                    }
+                }
+            } else if sub_command == "remove" {
+                if !is_admin {
+                    return format!("You are not admin.");
+                }
+                let shortcut = shortcut_config_text.unwrap().strip_prefix("remove ");
+                if shortcut.is_none() {
+                    format!("Invalid format.  \n/config shortcut remove **shortcut**")
+                } else {
+                    if remove_shortcut_prompt(shortcut.unwrap().to_string()).is_none() {
+                        format!("Shortcut **{}** doesn't exist", shortcut.unwrap())
+                    } else {
+                        format!("Shortcut **{}** removed successfully.", shortcut.unwrap())
+                    }
+                }
+            } else {
+                let shortcut_prompt = get_shortcut_prompt(sub_command.to_string());
+                if shortcut_prompt.is_none() {
+                    format!("Shortcut did not add for '{}'", sub_command)
+                } else {
+                    shortcut_prompt.unwrap()
+                }
+            }
+        }
+    } else {
+        "Invalid config command.".to_string()
+    }
 }
 
 fn make_chat_request(old_messages: Vec<Message>, is_retry: bool, prompt: String) -> String {
-    let mut messages = vec![Form {
-        role: "system".to_string(),
-        content: "You are a helpful assistant.".to_string(),
-    }];
+    let system_prompt = get_prompt();
+    let model = get_model();
+    let mut messages = vec![
+        Form {
+            role: "system".to_string(),
+            content: system_prompt,
+        },
+        // Form {
+        //     role: "developer".to_string(),
+        //     content: "Please give me response as telegram Markdown parse format.".to_string(),
+        // },
+    ];
 
     old_messages
         .iter()
@@ -151,75 +322,15 @@ fn make_chat_request(old_messages: Vec<Message>, is_retry: bool, prompt: String)
     }
 
     json!({
-        "model": "gpt-4o",
+        "model": model,
         "messages": messages
     })
     .to_string()
 }
 
-fn convert_to_telegram_format(input: &str, format_type: &str) -> String {
-    let mut formatted_text = input.to_string();
-
-    // Bold formatting - '**text**' for Markdown or <b>text</b> for HTML
-    formatted_text = if format_type == "markdown" {
-        let bold_re = Regex::new(r"\*\*(.*?)\*\*").unwrap();
-        bold_re.replace_all(&formatted_text, r"\*\*$1\*\*").to_string()
-    } else {
-        let bold_re = Regex::new(r"\*\*(.*?)\*\*").unwrap();
-        bold_re.replace_all(&formatted_text, r"<b>$1</b>").to_string()
-    };
-
-    // Italic formatting - '*text*' for Markdown or <i>text</i> for HTML
-    formatted_text = if format_type == "markdown" {
-        let italic_re = Regex::new(r"\*(.*?)\*").unwrap();
-        italic_re.replace_all(&formatted_text, r"* $1 *").to_string()
-    } else {
-        let italic_re = Regex::new(r"\*(.*?)\*").unwrap();
-        italic_re.replace_all(&formatted_text, r"<i>$1</i>").to_string()
-    };
-
-    // Monospace formatting - '`text`' for Markdown or <code>text</code> for HTML
-    formatted_text = if format_type == "markdown" {
-        let monospace_re = Regex::new(r"`(.*?)`").unwrap();
-        monospace_re.replace_all(&formatted_text, r"`$1`").to_string()
-    } else {
-        let monospace_re = Regex::new(r"`(.*?)`").unwrap();
-        monospace_re.replace_all(&formatted_text, r"<code>$1</code>").to_string()
-    };
-
-    // Underline formatting - '_text_' for Markdown or <u>text</u> for HTML
-    formatted_text = if format_type == "markdown" {
-        let underline_re = Regex::new(r"_(.*?)_").unwrap();
-        underline_re.replace_all(&formatted_text, r"_$1_").to_string()
-    } else {
-        let underline_re = Regex::new(r"_(.*?)_").unwrap();
-        underline_re.replace_all(&formatted_text, r"<u>$1</u>").to_string()
-    };
-
-    // Strikethrough formatting - '~~text~~' for Markdown or <del>text</del> for HTML
-    formatted_text = if format_type == "markdown" {
-        let strikethrough_re = Regex::new(r"~~(.*?)~~").unwrap();
-        strikethrough_re.replace_all(&formatted_text, r"~~$1~~").to_string()
-    } else {
-        let strikethrough_re = Regex::new(r"~~(.*?)~~").unwrap();
-        strikethrough_re.replace_all(&formatted_text, r"<del>$1</del>").to_string()
-    };
-
-    // Spoiler formatting - '||text||' for Markdown or <spoiler>text</spoiler> for HTML
-    formatted_text = if format_type == "markdown" {
-        let spoiler_re = Regex::new(r"\|\|(.*?)\|\|").unwrap();
-        spoiler_re.replace_all(&formatted_text, r"||$1||").to_string()
-    } else {
-        let spoiler_re = Regex::new(r"\|\|(.*?)\|\|").unwrap();
-        spoiler_re.replace_all(&formatted_text, r"<spoiler>$1</spoiler>").to_string()
-    };
-
-    formatted_text
-}
-
 fn send_message(chat: MessageChat, text: String) -> HttpResponse {
     let mut m = SendMessage::new(chat, text);
-    m.parse_mode(ParseMode::Html);
+    m.parse_mode(ParseMode::Markdown);
     let mut value = serde_json::to_value(m).unwrap();
     add_method(&mut value, "sendMessage".to_string());
     HttpResponse {

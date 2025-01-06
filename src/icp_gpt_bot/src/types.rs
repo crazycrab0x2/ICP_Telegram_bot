@@ -68,16 +68,20 @@ pub struct Form {
 }
 
 #[derive(Clone, Serialize, CandidType, Deserialize)]
-pub struct InitArg {
+pub struct Config {
     pub admin: String,
     pub token: String,
-    pub usernames: Vec<String>,
-    pub prompts: Vec<Shortcut>
-}
+    pub model: String,
+    pub prompt: String,
+}  
 
-#[derive(Clone, Serialize, CandidType, Deserialize)]
-pub struct Shortcut {
-    pub shortcut: String,
-    pub prompt: String
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            admin: String::from(""),
+            token: String::from(""),
+            model: String::from(""),
+            prompt: String::from(""),
+        }
+    }
 }
-

@@ -1,3 +1,9 @@
+type Config = record {
+  model : text;
+  token : text;
+  admin : text;
+  prompt : text;
+};
 type HttpHeader = record { value : text; name : text };
 type HttpRequest = record {
   url : text;
@@ -17,7 +23,8 @@ type HttpResponse_1 = record {
   headers : vec HttpHeader;
 };
 type TransformArgs = record { context : blob; response : HttpResponse_1 };
-service : {
+service : (Config) -> {
+  get_config : () -> (Config) query;
   http_request : (HttpRequest) -> (HttpResponse) composite_query;
   http_request_update : (HttpRequest) -> (HttpResponse);
   transform : (TransformArgs) -> (HttpResponse_1) query;

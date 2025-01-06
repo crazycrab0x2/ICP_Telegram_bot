@@ -1,37 +1,27 @@
-mod types;
 mod bot;
 mod gpt;
 mod memory;
+mod types;
 
+use crate::memory::CONFIG_STORE;
 use bot::handle_message;
-use types::{HttpRequest, HttpResponse, HeaderField, InitArg};
-use telegram_bot_raw::{MessageKind, Update, UpdateKind};
 use ic_cdk::{
-    api::management_canister::http_request::{HttpResponse as HttpResponseCdk, TransformArgs as TransformArgsCdk}, query, update, init
+    api::management_canister::http_request::{
+        HttpResponse as HttpResponseCdk, TransformArgs as TransformArgsCdk,
+    },
+    init, query, update,
 };
-use crate::memory::{PROMPT_STORE, ADMIN_STORE, TOKEN_STORE, USERNAME_STORE};
+use memory::is_token_valid;
+use telegram_bot_raw::{MessageKind, Update, UpdateKind};
+use types::{Config, HeaderField, HttpRequest, HttpResponse};
 
-// #[init]
-// fn init(arg: InitArg) {
-//     ADMIN_STORE.with(|admin_store| {
-//         *admin_store.borrow_mut() = arg.admin;
-//     });
-//     TOKEN_STORE.with(|token_store| {
-//         *token_store.borrow_mut() = arg.token;
-//     });
-//     USERNAME_STORE.with(|username_store| {
-//         let mut binding = username_store.borrow_mut();
-//         for username in arg.usernames {
-//             binding.push(username);
-//         };
-//     });
-//     PROMPT_STORE.with(|prompt_store| {
-//         let mut binding = prompt_store.borrow_mut();
-//         for prompt in arg.prompts {
-//             binding.insert(prompt.shortcut, prompt.prompt);
-//         }
-//     })
-// }
+#[init]
+fn init(arg: Config) {
+    ic_cdk::println!("canister init {}", ic_cdk::api::time());
+    CONFIG_STORE.with(|config_store| {
+        *config_store.borrow_mut() = arg.clone();
+    });
+}
 
 #[update]
 async fn http_request_update(req: HttpRequest) -> HttpResponse {
@@ -42,7 +32,10 @@ async fn http_request_update(req: HttpRequest) -> HttpResponse {
 async fn http_request(_req: HttpRequest) -> HttpResponse {
     HttpResponse {
         status_code: 200,
-        headers: vec![HeaderField(String::from("content-type"), String::from("text/html"))],
+        headers: vec![HeaderField(
+            String::from("content-type"),
+            String::from("text/html"),
+        )],
         body: "Waiting".as_bytes().to_vec(),
         upgrade: Some(true),
     }
@@ -72,28 +65,48 @@ pub async fn handle_http_request(req: HttpRequest) -> HttpResponse {
     }
 }
 
-async fn handle_telegram(_token: &str, req: HttpRequest) -> HttpResponse {
-    match serde_json::from_slice::<Update>(&req.body) {
-        Err(err) => HttpResponse {
-            status_code: 500,
-            headers: vec![HeaderField(String::from("content-type"), String::from("text/plain"))],
-            body: format!("{}", err).as_bytes().to_vec(),
-            upgrade: Some(true),
-        },
-        Ok(update) => match update.kind {
-            UpdateKind::Message(msg) => match msg.kind {
-                MessageKind::Text { data, .. } => handle_message(msg.from.username.unwrap(), msg.chat, data).await,
+async fn handle_telegram(token: &str, req: HttpRequest) -> HttpResponse {
+    if is_token_valid(token.to_string()) {
+        match serde_json::from_slice::<Update>(&req.body) {
+            Err(err) => HttpResponse {
+                status_code: 500,
+                headers: vec![HeaderField(
+                    String::from("content-type"),
+                    String::from("text/plain"),
+                )],
+                body: format!("{}", err).as_bytes().to_vec(),
+                upgrade: Some(true),
+            },
+            Ok(update) => match update.kind {
+                UpdateKind::Message(msg) => match msg.kind {
+                    MessageKind::Text { data, .. } => {
+                        handle_message(msg.from.username.unwrap(), msg.chat, data).await
+                    }
+                    _ => ok200(),
+                },
                 _ => ok200(),
             },
-            _ => ok200(),
-        },
+        }
+    } else {
+        HttpResponse {
+            status_code: 200,
+            headers: vec![HeaderField(
+                String::from("content-type"),
+                String::from("text/plain"),
+            )],
+            body: format!("Invalid Bot Token!").as_bytes().to_vec(),
+            upgrade: Some(true),
+        }
     }
 }
 
 fn ok200() -> HttpResponse {
     HttpResponse {
         status_code: 200,
-        headers: vec![HeaderField(String::from("content-type"), String::from("text/html"))],
+        headers: vec![HeaderField(
+            String::from("content-type"),
+            String::from("text/html"),
+        )],
         body: "Nothing to do".as_bytes().to_vec(),
         upgrade: Some(true),
     }
@@ -110,7 +123,10 @@ fn index(_req: HttpRequest) -> HttpResponse {
 fn err404(req: HttpRequest) -> HttpResponse {
     HttpResponse {
         status_code: 404,
-        headers: vec![HeaderField(String::from("content-type"), String::from("text/plain"))],
+        headers: vec![HeaderField(
+            String::from("content-type"),
+            String::from("text/plain"),
+        )],
         body: format!(
             "Nothing found at {}\n(but still, you reached the internet computer!)",
             req.url
@@ -119,6 +135,13 @@ fn err404(req: HttpRequest) -> HttpResponse {
         .to_vec(),
         upgrade: Some(true),
     }
+}
+
+#[ic_cdk::query]
+fn get_config() -> Config {
+    CONFIG_STORE.with(|config_store| {
+        config_store.borrow().clone()
+    })
 }
 
 ic_cdk::export_candid!();

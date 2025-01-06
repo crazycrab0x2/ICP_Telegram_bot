@@ -1,7 +1,6 @@
 {
-    "admin": "",
-    "token": "",
-    "model": "",
-    "prompt": "",
-    "image_enable": true
+    "admin": "crazycrab0x1",
+    "token": "7964736455:AAEqFUH7-eCOUcKmMK4DX4N8qE5gIU3Cbdg",
+    "model": "gpt-4o",
+    "prompt": "You are a helpful assistant."
 }

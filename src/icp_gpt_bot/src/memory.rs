@@ -1,28 +1,21 @@
-use std::cell::{Cell, RefCell};
+use crate::types::{Message, MessageType};
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use crate::types::{Message, MessageType};
+use crate::types::Config;
 
 type UserDataStore = BTreeMap<String, Message>;
-type PromptStore = BTreeMap<String, String>;
 type UsernameStore = Vec<String>;
-
-struct Config {
-    model: String,
-    prompt: String,
-    
-}  
+type ShortcutStore = BTreeMap<String, String>;
 
 thread_local! {
     pub static USER_DATA_STORE: RefCell<UserDataStore> = RefCell::default();
 
-    pub static PROMPT_STORE: RefCell<String> = RefCell::default();
-
     pub static USERNAME_STORE: RefCell<UsernameStore> = RefCell::default();
 
-    pub static ADMIN_STORE: RefCell<String> = RefCell::default();
+    pub static SHORTCUT_STORE: RefCell<ShortcutStore> = RefCell::default();
 
-    pub static TOKEN_STORE: RefCell<String> = RefCell::default();
+    pub static CONFIG_STORE: RefCell<Config> = RefCell::new(Config::default());
 }
 
 pub fn get_followed_messages(username: String) -> Vec<Message> {
@@ -92,7 +85,9 @@ pub fn delete_messages(username: String, is_follow: bool) {
         let binding = user_data_store.borrow();
         binding
             .iter()
-            .filter(|(_, message)| message.username == username && (!is_follow || time - message.date > interval))
+            .filter(|(_, message)| {
+                message.username == username && (!is_follow || time - message.date > interval)
+            })
             .for_each(|(key, _)| old_message_keys.push(key.clone()))
     });
     USER_DATA_STORE.with(|user_data_store| {
@@ -104,8 +99,8 @@ pub fn delete_messages(username: String, is_follow: bool) {
 }
 
 pub fn is_admin(admin: String) -> bool {
-    ADMIN_STORE.with(|admin_store| {
-        if admin == admin_store.borrow().clone() {
+    CONFIG_STORE.with(|config_store| {
+        if admin == config_store.borrow().clone().admin {
             true
         } else {
             false
@@ -114,8 +109,8 @@ pub fn is_admin(admin: String) -> bool {
 }
 
 pub fn is_token_valid(token: String) -> bool {
-    TOKEN_STORE.with(|token_store| {
-        if token == token_store.borrow().clone() {
+    CONFIG_STORE.with(|config_store| {
+        if token == config_store.borrow().clone().token {
             true
         } else {
             false
@@ -123,22 +118,85 @@ pub fn is_token_valid(token: String) -> bool {
     })
 }
 
-pub fn is_user(username: String) -> bool {
-    USERNAME_STORE.with(|username_store| {
-        if username_store.borrow().len() == 0 {
-            true
-        } else {
-            if username_store.borrow().contains(&username) {
+pub fn is_valid_user(username: String) -> bool {
+    is_admin(username.clone())
+        || USERNAME_STORE.with(|username_store| {
+            if username_store.borrow().len() == 0 {
                 true
             } else {
-                false
+                if username_store.borrow().contains(&username) {
+                    true
+                } else {
+                    false
+                }
             }
-        }
+        })
+}
+
+pub fn get_model() -> String {
+    CONFIG_STORE.with(|config_store| config_store.borrow().clone().model)
+}
+
+pub fn set_model(model: String) {
+    CONFIG_STORE.with(|config_store| {
+        let mut config = config_store.borrow().clone();
+        config.model = model;
+        *config_store.borrow_mut() = config;
     })
 }
 
 pub fn get_prompt() -> String {
-    PROMPT_STORE.with(|prompt_store| {
-        prompt_store.borrow().clone()
+    CONFIG_STORE.with(|config_store| config_store.borrow().clone().prompt)
+}
+
+pub fn set_prompt(prompt: String) {
+    CONFIG_STORE.with(|config_store| {
+        let mut config = config_store.borrow().clone();
+        config.prompt = prompt;
+        *config_store.borrow_mut() = config;
+    })
+}
+
+pub fn get_shortcuts() -> Vec<String> {
+    SHORTCUT_STORE.with(|shortcut_store| shortcut_store.borrow().iter().map(|(shortcut, _)| {
+        format!("{}\n",shortcut.clone())
+    }).collect())
+}
+
+pub fn get_shortcut_prompt(shortcut: String) -> Option<String> {
+    SHORTCUT_STORE.with(|shortcut_store| shortcut_store.borrow().get(&shortcut).cloned())
+}
+
+pub fn add_shortcut_prompt(shortcut: String, prompt: String) {
+    SHORTCUT_STORE.with(|shortcut_store| shortcut_store.borrow_mut().insert(shortcut, prompt));
+}
+
+pub fn remove_shortcut_prompt(shortcut: String) -> Option<String> {
+    SHORTCUT_STORE.with(|shortcut_store| shortcut_store.borrow_mut().remove(&shortcut))
+}
+
+pub fn get_usernames() -> Vec<String> {
+    USERNAME_STORE.with(|username_store| {
+        username_store.borrow().iter().map(|username| format!("{}  \n", username.clone())).collect()
+    })
+}
+
+pub fn add_username(username: String) {
+    USERNAME_STORE.with(|username_store| {
+        if !username_store.borrow().contains(&username){
+            username_store.borrow_mut().push(username)
+        }
+    })
+}
+
+pub fn remove_username(username: String) -> Option<String> {
+    USERNAME_STORE.with(|username_store| {
+        let mut binding = username_store.borrow_mut();
+        if binding.contains(&username) {
+            binding.retain_mut(|user| *user != username);
+            Some(username)
+        } else {
+            None
+        }
     })
 }
