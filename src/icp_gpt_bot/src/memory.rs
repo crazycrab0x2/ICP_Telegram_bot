@@ -79,7 +79,7 @@ pub fn add_new_messages(
 
 pub fn delete_messages(username: String, is_follow: bool) {
     let time = ic_cdk::api::time();
-    let interval: u64 = 30 * 24 * 60 * 60 * 1_000_000_000; // a month in nanosecond
+    let interval: u64 = 7 * 24 * 60 * 60 * 1_000_000_000; // a month in nanosecond
     let mut old_message_keys: Vec<String> = vec![];
     USER_DATA_STORE.with(|user_data_store| {
         let binding = user_data_store.borrow();
